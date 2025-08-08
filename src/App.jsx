@@ -32,8 +32,7 @@ function App() {
   useEffect(() => {
     // Connect to WebSocket when selectedChat changes
     if (selectedChat) {
-      ws.current = new WebSocket(`ws://localhost:8000/api/ws/${selectedChat}`);
-      
+      ws.current = new WebSocket(`wss://whatsapp-clone-backend-5js5.onrender.com/api/ws/${selectedChat}`);      
       ws.current.onopen = () => {
         console.log(`WebSocket connected for wa_id: ${selectedChat}`);
       };
