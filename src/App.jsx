@@ -12,7 +12,7 @@ function App() {
 
   useEffect(() => {
     // Fetch conversations
-    axios.get('http://127.0.0.1:8000/api/conversations')
+    axios.get('https://whatsapp-clone-backend-5js5.onrender.com/api/conversations')
       .then(res => setConversations(res.data))
       .catch(err => console.error('Error fetching conversations:', err));
 
@@ -53,7 +53,7 @@ function App() {
         });
         
         // Update conversations
-        axios.get('http://127.0.0.1:8000/api/conversations')
+        axios.get('https://whatsapp-clone-backend-5js5.onrender.com/api/conversations')
           .then(res => setConversations(res.data));
       };
       
@@ -79,7 +79,7 @@ function App() {
   const loadMessages = async (wa_id) => {
     setSelectedChat(wa_id);
     try {
-      const res = await axios.get(`http://127.0.0.1:8000/api/messages/${wa_id}`);
+      const res = await axios.get(`https://whatsapp-clone-backend-5js5.onrender.com/api/messages/${wa_id}`);
       setMessages(res.data);
       setUserInfo({ name: `User ${wa_id.slice(-4)}`, number: wa_id });
     } catch (err) {
@@ -90,7 +90,7 @@ function App() {
   const sendMessage = async () => {
     if (newMessage && selectedChat) {
       try {
-        await axios.post('http://127.0.0.1:8000/api/send-message', {
+        await axios.post('https://whatsapp-clone-backend-5js5.onrender.com/api/send-message', {
           wa_id: selectedChat,
           text: newMessage,
         });
