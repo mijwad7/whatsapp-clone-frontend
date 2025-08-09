@@ -9,11 +9,59 @@ function App() {
   const [userInfo, setUserInfo] = useState({ name: '', number: '' });
   const ws = useRef(null);
   const messagesEndRef = useRef(null);
+  const reconnectAttempts = useRef(0);
+  const maxReconnectAttempts = 5;
+
+  const connectWebSocket = (wa_id) => {
+    ws.current = new WebSocket(`wss://whatsapp-clone-backend-5js5.onrender.com/api/ws/${wa_id}`);
+    
+    ws.current.onopen = () => {
+      console.log(`WebSocket connected for wa_id: ${wa_id}`);
+      reconnectAttempts.current = 0;
+    };
+    
+    ws.current.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.ping === 'pong' || data.status === 'connected') return;
+      
+      // Update messages
+      setMessages(prev => {
+        const exists = prev.some(msg => msg.message_id === data.message_id);
+        if (exists) {
+          return prev.map(msg => msg.message_id === data.message_id ? data : msg);
+        }
+        return [...prev, data];
+      });
+      
+      // Update conversations
+      axios.get('https://whatsapp-clone-backend-5js5.onrender.com/api/conversations')
+        .then(res => {
+          setConversations(res.data.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
+        });
+    };
+    
+    ws.current.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+    
+    ws.current.onclose = () => {
+      console.log(`WebSocket closed for wa_id: ${wa_id}`);
+      if (reconnectAttempts.current < maxReconnectAttempts) {
+        setTimeout(() => {
+          reconnectAttempts.current += 1;
+          console.log(`Reconnecting WebSocket (attempt ${reconnectAttempts.current})`);
+          connectWebSocket(wa_id);
+        }, 2000 * reconnectAttempts.current);
+      }
+    };
+  };
 
   useEffect(() => {
     // Fetch conversations
     axios.get('https://whatsapp-clone-backend-5js5.onrender.com/api/conversations')
-      .then(res => setConversations(res.data))
+      .then(res => {
+        setConversations(res.data.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
+      })
       .catch(err => console.error('Error fetching conversations:', err));
 
     // Cleanup WebSocket on unmount
@@ -32,39 +80,7 @@ function App() {
   useEffect(() => {
     // Connect to WebSocket when selectedChat changes
     if (selectedChat) {
-      ws.current = new WebSocket(`wss://whatsapp-clone-backend-5js5.onrender.com/api/ws/${selectedChat}`);      
-      ws.current.onopen = () => {
-        console.log(`WebSocket connected for wa_id: ${selectedChat}`);
-      };
-      
-      ws.current.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.ping === 'pong') return;
-        if (data.status === 'connected') return;
-        
-        // Update messages
-        setMessages(prev => {
-          const exists = prev.some(msg => msg.message_id === data.message_id);
-          if (exists) {
-            return prev.map(msg => msg.message_id === data.message_id ? data : msg);
-          }
-          return [...prev, data];
-        });
-        
-        // Update conversations
-        axios.get('https://whatsapp-clone-backend-5js5.onrender.com/api/conversations')
-          .then(res => setConversations(res.data));
-      };
-      
-      ws.current.onerror = (error) => {
-        console.error('WebSocket error:', error);
-      };
-      
-      ws.current.onclose = () => {
-        console.log(`WebSocket closed for wa_id: ${selectedChat}`);
-      };
-      
-      // Fetch messages for selected chat
+      connectWebSocket(selectedChat);
       loadMessages(selectedChat);
     }
     
@@ -89,13 +105,17 @@ function App() {
   const sendMessage = async () => {
     if (newMessage && selectedChat) {
       try {
-        await axios.post('https://whatsapp-clone-backend-5js5.onrender.com/api/send-message', {
+        const response = await axios.post('https://whatsapp-clone-backend-5js5.onrender.com/api/send-message', {
           wa_id: selectedChat,
           text: newMessage,
         });
         setNewMessage('');
+        // Optionally fetch messages to ensure UI sync
+        await loadMessages(selectedChat);
       } catch (err) {
         console.error('Error sending message:', err);
+        // Fallback to reload messages on error
+        await loadMessages(selectedChat);
       }
     }
   };
