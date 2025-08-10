@@ -12,6 +12,38 @@ function App() {
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 5;
 
+  // Format date for conversation list and message separators
+  const formatDate = (timestamp) => {
+    const date = new Date(timestamp);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    
+    const isToday = date.toDateString() === today.toDateString();
+    const isYesterday = date.toDateString() === yesterday.toDateString();
+    
+    if (isToday) return 'Today';
+    if (isYesterday) return 'Yesterday';
+    return date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  };
+
+  // Group messages by date for separators
+  const groupMessagesByDate = (messages) => {
+    const grouped = [];
+    let currentDate = null;
+    
+    messages.forEach((msg, index) => {
+      const msgDate = new Date(msg.timestamp).toDateString();
+      if (msgDate !== currentDate) {
+        grouped.push({ type: 'date', date: msg.timestamp, id: `date-${index}` });
+        currentDate = msgDate;
+      }
+      grouped.push({ type: 'message', ...msg });
+    });
+    
+    return grouped;
+  };
+
   const connectWebSocket = (wa_id) => {
     ws.current = new WebSocket(`wss://whatsapp-clone-backend-5js5.onrender.com/api/ws/${wa_id}`);
     
@@ -24,7 +56,6 @@ function App() {
       const data = JSON.parse(event.data);
       if (data.ping === 'pong' || data.status === 'connected') return;
       
-      // Update messages
       setMessages(prev => {
         const exists = prev.some(msg => msg.message_id === data.message_id);
         if (exists) {
@@ -33,7 +64,6 @@ function App() {
         return [...prev, data];
       });
       
-      // Update conversations
       axios.get('https://whatsapp-clone-backend-5js5.onrender.com/api/conversations')
         .then(res => {
           setConversations(res.data.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
@@ -57,14 +87,12 @@ function App() {
   };
 
   useEffect(() => {
-    // Fetch conversations
     axios.get('https://whatsapp-clone-backend-5js5.onrender.com/api/conversations')
       .then(res => {
         setConversations(res.data.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
       })
       .catch(err => console.error('Error fetching conversations:', err));
 
-    // Cleanup WebSocket on unmount
     return () => {
       if (ws.current) {
         ws.current.close();
@@ -73,12 +101,10 @@ function App() {
   }, []);
 
   useEffect(() => {
-    // Scroll to bottom of messages
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   useEffect(() => {
-    // Connect to WebSocket when selectedChat changes
     if (selectedChat) {
       connectWebSocket(selectedChat);
       loadMessages(selectedChat);
@@ -105,16 +131,14 @@ function App() {
   const sendMessage = async () => {
     if (newMessage && selectedChat) {
       try {
-        const response = await axios.post('https://whatsapp-clone-backend-5js5.onrender.com/api/send-message', {
+        await axios.post('https://whatsapp-clone-backend-5js5.onrender.com/api/send-message', {
           wa_id: selectedChat,
           text: newMessage,
         });
         setNewMessage('');
-        // Optionally fetch messages to ensure UI sync
         await loadMessages(selectedChat);
       } catch (err) {
         console.error('Error sending message:', err);
-        // Fallback to reload messages on error
         await loadMessages(selectedChat);
       }
     }
@@ -143,7 +167,7 @@ function App() {
                 <div className="flex-1">
                   <div className="flex justify-between">
                     <h3 className="font-medium text-gray-800">{`User ${conv.wa_id.slice(-4)}`}</h3>
-                    <span className="text-xs text-gray-500">{new Date(conv.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span className="text-xs text-gray-500">{formatDate(conv.timestamp)}</span>
                   </div>
                   <p className="text-sm text-gray-600 truncate">{conv.last_message}</p>
                 </div>
@@ -172,37 +196,45 @@ function App() {
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-4 bg-whatsapp-bg">
-              {messages.map(msg => (
-                <div
-                  key={msg.message_id}
-                  className={`flex mb-3 ${msg.wa_id === selectedChat ? 'justify-end' : 'justify-start'}`}
-                >
+              {groupMessagesByDate(messages).map(item => (
+                item.type === 'date' ? (
+                  <div key={item.id} className="flex justify-center my-2">
+                    <span className="text-xs text-gray-600 bg-gray-200 px-3 py-1 rounded-full">
+                      {formatDate(item.date)}
+                    </span>
+                  </div>
+                ) : (
                   <div
-                    className={`p-3 rounded-lg max-w-[70%] ${msg.wa_id === selectedChat ? 'bg-message-out' : 'bg-message-in'} shadow-sm`}
+                    key={item.message_id}
+                    className={`flex mb-3 ${item.wa_id === selectedChat ? 'justify-end' : 'justify-start'}`}
                   >
-                    <p className="text-sm">{msg.text}</p>
-                    <div className="text-xs text-gray-500 mt-1 flex items-center justify-end">
-                      <span>{new Date(msg.timestamp).toLocaleString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                      {msg.wa_id === selectedChat && (
-                        <span className="ml-2">
-                          {msg.status === 'read' ? (
-                            <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
-                              <path d="M16.707 5.293a1 1 0 00-1.414 0L8 12.586 4.707 9.293a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l8-8a1 1 0 000-1.414z" />
-                            </svg>
-                          ) : msg.status === 'delivered' ? (
-                            <svg className="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
-                              <path d="M16.707 5.293a1 1 0 00-1.414 0L8 12.586 4.707 9.293a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l8-8a1 1 0 000-1.414z" />
-                            </svg>
-                          ) : (
-                            <svg className="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
-                              <path d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12h2v2h-2V6zm0 4h2v6h-2v-6z" />
-                            </svg>
-                          )}
-                        </span>
-                      )}
+                    <div
+                      className={`p-3 rounded-lg max-w-[70%] ${item.wa_id === selectedChat ? 'bg-message-out' : 'bg-message-in'} shadow-sm`}
+                    >
+                      <p className="text-sm">{item.text}</p>
+                      <div className="text-xs text-gray-500 mt-1 flex items-center justify-end">
+                        <span>{new Date(item.timestamp).toLocaleString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        {item.wa_id === selectedChat && (
+                          <span className="ml-2">
+                            {item.status === 'read' ? (
+                              <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M16.707 5.293a1 1 0 00-1.414 0L8 12.586 4.707 9.293a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l8-8a1 1 0 000-1.414z" />
+                              </svg>
+                            ) : item.status === 'delivered' ? (
+                              <svg className="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M16.707 5.293a1 1 0 00-1.414 0L8 12.586 4.707 9.293a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l8-8a1 1 0 000-1.414z" />
+                              </svg>
+                            ) : (
+                              <svg className="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12h2v2h-2V6zm0 4h2v6h-2v-6z" />
+                              </svg>
+                            )}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
+                )
               ))}
               <div ref={messagesEndRef} />
             </div>
